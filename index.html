@@ -15,6 +15,7 @@
             --matrix-glow: rgba(0, 255, 102, 0.2);
             --cyber-amber: #ffb300;
             --cyber-red: #ff2a2a;
+            --cyber-blue: #00e5ff;
             --text-main: #cdffd8;
             --text-muted: #4e7c5e;
             --border-glow: #00ff66;
@@ -59,6 +60,37 @@
             border-radius: 4px;
             box-shadow: 0 0 20px var(--matrix-glow), inset 0 0 15px rgba(0, 255, 102, 0.1);
             position: relative;
+        }
+
+        /* Navigation HUD Bar */
+        .hud-nav {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 20px;
+            border-bottom: 1px dashed rgba(0, 255, 102, 0.3);
+            padding-bottom: 10px;
+        }
+
+        .hud-nav a {
+            color: var(--text-muted);
+            text-decoration: none;
+            font-size: 0.75rem;
+            border: 1px solid var(--text-muted);
+            padding: 5px 12px;
+            border-radius: 2px;
+            transition: all 0.2s;
+        }
+
+        .hud-nav a.active {
+            color: var(--matrix-green);
+            border-color: var(--matrix-green);
+            text-shadow: 0 0 5px var(--matrix-green);
+            box-shadow: 0 0 5px rgba(0, 255, 102, 0.2);
+        }
+
+        .hud-nav a:hover:not(.active) {
+            color: var(--cyber-amber);
+            border-color: var(--cyber-amber);
         }
 
         /* Decorative Terminal Header Nodes */
@@ -268,7 +300,7 @@
             border: 1px solid var(--text-muted);
             padding: 15px;
             font-family: 'Fira Code', monospace;
-            font-size: 13.5px;
+            font-size: 13px;
             line-height: 1.5;
             white-space: pre;
             overflow-x: auto;
@@ -302,8 +334,14 @@
             font-size: 0.75rem;
             color: var(--text-muted);
             margin-bottom: 25px;
-            max-height: 60px;
+            max-height: 120px;
+            height: 120px;
             overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-end;
+            font-family: 'Fira Code', monospace;
+            line-height: 1.4;
         }
 
         .console-feed span {
@@ -314,6 +352,7 @@
             display: flex;
             gap: 15px;
             justify-content: center;
+            flex-wrap: wrap;
         }
 
         button {
@@ -356,6 +395,11 @@
 <body>
 
 <div class="container">
+    <div class="hud-nav">
+        <a href="index.html" class="active">[01] CORE_COMPILER</a>
+        <a href="android_hid.html">[02] ANDROID_HID_NODE</a>
+    </div>
+
     <div class="terminal-header">
         <div class="terminal-dots">
             <div class="dot red"></div>
@@ -382,6 +426,11 @@
             <input type="checkbox" id="indentFix" checked>
             <label for="indentFix">LOCK_STRUCT_INDENT</label>
         </div>
+    </div>
+
+    <div class="config-panel" style="margin-top: -10px; padding: 8px 15px; font-size: 0.75rem; border-color: rgba(0,255,102,0.3); justify-content: space-between;">
+        <div>SYS_CORE_TEMP: <span style="color: var(--matrix-green);">42°C</span></div>
+        <div id="bufferMetric">BUFFER_LOAD: 0 / 2048 BITS</div>
     </div>
 
     <div class="macro-container">
@@ -444,20 +493,70 @@
     </div>
 
     <div class="console-feed" id="consoleFeed">
-        [<span>SYSTEM INFO</span>] Terminal engine active. Core layout matrix ready for serial parsing injection loops...
+        <div>[<span>SYSTEM INFO</span>] Terminal engine active. Core layout matrix ready for serial parsing injection loops...</div>
     </div>
 
     <div class="controls">
         <button class="btn-primary" onclick="convertText()">Convert Layout</button>
         <button class="btn-secondary" onclick="copyToClipboard()">Copy Payload</button>
+        <button class="btn-primary" style="border-color: var(--cyber-blue); color: var(--cyber-blue);" onclick="exportToAndroidNode()">Port to Android Link</button>
     </div>
 </div>
 
 <script>
+    // Quick Audio Synthesizer Engine
+    function playHUDChime(type) {
+        try {
+            const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            const oscillator = audioCtx.createOscillator();
+            const gainNode = audioCtx.createGain();
+            
+            oscillator.connect(gainNode);
+            gainNode.connect(audioCtx.destination);
+            
+            if (type === 'click') {
+                oscillator.type = 'sine';
+                oscillator.frequency.setValueAtTime(1200, audioCtx.currentTime); 
+                gainNode.gain.setValueAtTime(0.02, audioCtx.currentTime);
+                oscillator.start();
+                oscillator.stop(audioCtx.currentTime + 0.03);
+            } else if (type === 'success') {
+                oscillator.type = 'square';
+                oscillator.frequency.setValueAtTime(880, audioCtx.currentTime);
+                oscillator.frequency.setValueAtTime(1760, audioCtx.currentTime + 0.06);
+                gainNode.gain.setValueAtTime(0.01, audioCtx.currentTime);
+                oscillator.start();
+                oscillator.stop(audioCtx.currentTime + 0.15);
+            }
+        } catch(e) { /* Fails silently if blocked by browser autoplay rules */ }
+    }
+
+    // Appending Console Feed Log
     function updateLog(status, detail) {
         const feed = document.getElementById('consoleFeed');
-        feed.innerHTML = `[<span>${status}</span>] ${detail}`;
+        const time = new Date().toTimeString().split(' ')[0];
+        
+        const logLine = document.createElement('div');
+        logLine.innerHTML = `[<span style="color: var(--text-muted);">${time}</span>] [<span style="color: var(--matrix-green);">${status}</span>] ${detail}`;
+        feed.appendChild(logLine);
+        feed.scrollTop = feed.scrollHeight;
     }
+
+    // Real-time Buffer / Diagnostic Matrix Calculator
+    document.getElementById('sourceCode').addEventListener('input', function() {
+        const chars = this.value.length;
+        const bits = chars * 8; 
+        const metric = document.getElementById('bufferMetric');
+        
+        metric.innerText = `BUFFER_LOAD: ${bits} / 2048 BITS`;
+        if(bits > 1600) {
+            metric.style.color = 'var(--cyber-red)';
+        } else if (bits > 800) {
+            metric.style.color = 'var(--cyber-amber)';
+        } else {
+            metric.style.color = 'var(--text-main)';
+        }
+    });
 
     function injectKeyword(val) {
         const txtArea = document.getElementById('sourceCode');
@@ -470,6 +569,8 @@
         txtArea.selectionStart = startPos + val.length;
         txtArea.selectionEnd = startPos + val.length;
 
+        // Dispatch input event manually to sync character metrics
+        txtArea.dispatchEvent(new Event('input'));
         updateLog("MACRO_INJECTED", `Injected instruction token: ${val.trim()}`);
     }
 
@@ -489,6 +590,7 @@
         }
 
         txtArea.value = configuration;
+        txtArea.dispatchEvent(new Event('input'));
         txtArea.focus();
     }
 
@@ -541,17 +643,44 @@
         });
 
         document.getElementById('duckyOutput').value = duckyScript.trim();
-        updateLog("SUCCESS", `Layout array fully compiled. Lines parsed: ${lines.length}. Line Delay set to ${delay}ms.`);
+        updateLog("SUCCESS", `Layout array fully compiled. Lines parsed: ${lines.length}.`);
     }
 
     function copyToClipboard() {
         const outputText = document.getElementById('duckyOutput');
-        if (!outputText.value || outputText.value.startsWith("System Error")) return;
+        if (!outputText.value || outputText.value.startsWith("System Error") || outputText.value.startsWith("Awaiting")) return;
         
         outputText.select();
         navigator.clipboard.writeText(outputText.value);
         updateLog("CACHE_EXPORTED", "Payload stream saved successfully to host memory clipboard.");
     }
+
+    function exportToAndroidNode() {
+        const outputText = document.getElementById('duckyOutput').value;
+        
+        if (!outputText || outputText.startsWith("System Error") || outputText.startsWith("Awaiting")) {
+            updateLog("ERROR", "Export matrix transmission failed. Compile data stream before porting nodes.");
+            return;
+        }
+        
+        localStorage.setItem('sharedDuckyScript', outputText);
+        updateLog("DATA_SYNCED", "Payload cached in temporary local browser buffer storage.");
+        
+        setTimeout(() => {
+            window.location.href = "android_hid.html";
+        }, 400);
+    }
+
+    // Attach sound feedback listeners globally to button clicks
+    document.querySelectorAll('button').forEach(btn => {
+        btn.addEventListener('click', () => {
+            if (btn.onclick && (btn.onclick.toString().includes('convertText') || btn.onclick.toString().includes('exportToAndroidNode'))) {
+                playHUDChime('success');
+            } else {
+                playHUDChime('click');
+            }
+        });
+    });
 </script>
 
 </body>
